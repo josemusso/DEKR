@@ -22,6 +22,8 @@ sys.path.append("../lib")
 import cv2
 import numpy as np
 from PIL import Image
+import ffmpeg
+import matplotlib.pyplot as plt
 
 import torch
 import torch.nn.parallel
@@ -87,6 +89,28 @@ CROWDPOSE_KEYPOINT_INDEXES = {
     13: 'neck'
 }
 
+def draw_skeleton(image, points):
+    skeleton = [
+                # # [16, 14], [14, 12], [17, 15], [15, 13], [12, 13], [6, 12], [7, 13], [6, 7], [6, 8],
+                # # [7, 9], [8, 10], [9, 11], [2, 3], [1, 2], [1, 3], [2, 4], [3, 5], [4, 6], [5, 7]
+                # [15, 13], [13, 11], [16, 14], [14, 12], [11, 12], [5, 11], [6, 12], [5, 6], [5, 7],
+                # [6, 8], [7, 9], [8, 10], [1, 2], [0, 1], [0, 2], [1, 3], [2, 4], [3, 5], [4, 6]
+                [15, 13], [13, 11], [16, 14], [14, 12], [11, 12], [5, 11], [6, 12], [5, 6], [5, 7],
+                [6, 8], [7, 9], [8, 10], [1, 2], [0, 1], [0, 2], [1, 3], [2, 4],  # [3, 5], [4, 6]
+                [0, 5], [0, 6]
+    ]
+
+    purple = (255,0,255)
+    yellow = (0,255,255)
+
+    for i, joint in enumerate(skeleton):
+            pt1, pt2 = points[joint]
+            image = cv2.line(
+                image, (int(pt1[0]), int(pt1[1])), (int(pt2[0]), int(pt2[1])),
+                purple, 2)
+
+    return image
+
 
 def get_pose_estimation_prediction(cfg, model, image, vis_thre, transforms):
     # size at scale 1.0
@@ -112,7 +136,11 @@ def get_pose_estimation_prediction(cfg, model, image, vis_thre, transforms):
             heatmap_sum, poses = aggregate_results(
                 cfg, heatmap_sum, poses, heatmap, posemap, scale
             )
-        
+
+        # get heatmap of every frame, select slice depending on keypoint
+        selected_keypoint = 14
+        heatmap_slice = heatmap_sum.cpu().numpy()[0,selected_keypoint]
+
         heatmap_avg = heatmap_sum/len(cfg.TEST.SCALE_FACTOR)
         poses, scores = pose_nms(cfg, heatmap_avg, poses)
 
@@ -134,7 +162,7 @@ def get_pose_estimation_prediction(cfg, model, image, vis_thre, transforms):
         if len(final_results) == 0:
             return []
 
-    return final_results
+    return final_results, heatmap_slice
 
 
 def prepare_output_dirs(prefix='/output/'):
@@ -151,7 +179,7 @@ def parse_args():
     parser.add_argument('--cfg', type=str, required=True)
     parser.add_argument('--videoFile', type=str, required=True)
     parser.add_argument('--outputDir', type=str, default='/output/')
-    parser.add_argument('--inferenceFps', type=int, default=10)
+    parser.add_argument('--inferenceFps', type=int, default=1)
     parser.add_argument('--visthre', type=float, default=0)
     parser.add_argument('opts',
                         help='Modify config options using the command-line',
@@ -186,10 +214,12 @@ def main():
     pose_dir = prepare_output_dirs(args.outputDir)
     csv_output_rows = []
 
+    # import model architecture
     pose_model = eval('models.'+cfg.MODEL.NAME+'.get_pose_net')(
         cfg, is_train=False
     )
 
+    # import weights
     if cfg.TEST.MODEL_FILE:
         print('=> loading model from {}'.format(cfg.TEST.MODEL_FILE))
         pose_model.load_state_dict(torch.load(
@@ -203,26 +233,43 @@ def main():
     # Loading an video
     vidcap = cv2.VideoCapture(args.videoFile)
     fps = vidcap.get(cv2.CAP_PROP_FPS)
+    length = int(vidcap.get(cv2.CAP_PROP_FRAME_COUNT))
     if fps < args.inferenceFps:
         raise ValueError('desired inference fps is ' +
                          str(args.inferenceFps)+' but video fps is '+str(fps))
     skip_frame_cnt = round(fps / args.inferenceFps)
     frame_width = int(vidcap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_height = int(vidcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    outcap = cv2.VideoWriter('{}/{}_pose.avi'.format(args.outputDir, os.path.splitext(os.path.basename(args.videoFile))[0]),
-                             cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), int(skip_frame_cnt), (frame_width, frame_height))
+
+    # adjust dimensions if rotation is needed
+    rotate = False
+    if rotate:    
+        frame_height = int(vidcap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        frame_width = int(vidcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    outcap = cv2.VideoWriter('{}/{}_pose.mp4'.format(args.outputDir, os.path.splitext(os.path.basename(args.videoFile))[0]),
+                             cv2.VideoWriter_fourcc(*'MP4V'), int(skip_frame_cnt), (frame_width, frame_height))
 
     count = 0
+    now_full= time.time()
     while vidcap.isOpened():
         total_now = time.time()
         ret, image_bgr = vidcap.read()
         count += 1
 
+        if rotate:    
+            image_bgr = cv2.rotate(image_bgr, cv2.cv2.ROTATE_90_CLOCKWISE)
+            # image_bgr = cv2.rotate(image_bgr, cv2.cv2.ROTATE_90_COUNTERCLOCKWISE)
+        
+        # image_bgr = cv2.flip(image_bgr, 1)
+
+
         if not ret:
             break
 
-        if count % skip_frame_cnt != 0:
-            continue
+        # if count % skip_frame_cnt != 0:
+        #     continue
+        print('Processing frame {} out of {}'.format(str(count),str(length)))
 
         image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
 
@@ -232,14 +279,42 @@ def main():
         image_debug = image_bgr.copy()
 
         now = time.time()
-        pose_preds = get_pose_estimation_prediction(
+
+        # added return heatmap_slice
+        pose_preds, heatmap_slice = get_pose_estimation_prediction(
             cfg, pose_model, image_pose, args.visthre, transforms=pose_transform)
         then = time.time()
-        if len(pose_preds) == 0:
-            count += 1
-            continue
 
-        print("Find person pose in: {} sec".format(then - now))
+        # save heatmap_slice as image over original image
+        print(heatmap_slice.shape)
+        print(np.max(heatmap_slice))
+        print(np.min(heatmap_slice))
+        # plt.imshow(heatmap_slice, cmap='hot', interpolation='nearest')
+        # plt.show()
+        # plt.savefig(os.path.join(pose_dir, 'heatmap_{:08d}.jpg'.format(count)))
+
+        # normalizar y mapear a 0-255 para hacer imagen
+        # no normalizar para que se vea la confiabilidad del detector
+        heatmap_slice_image = (heatmap_slice/np.max(heatmap_slice))*255.0
+        heatmap_slice_image = cv2.resize(heatmap_slice_image,(frame_width,frame_height))
+
+        image_gray = np.asarray(cv2.cvtColor(image_debug, cv2.COLOR_BGR2GRAY), np.float32)
+        image_gray_3chan=cv2.cvtColor(image_gray, cv2.COLOR_GRAY2BGR)
+        # image_gray_3chan = np.zeros((height,width,3), np.float32)
+        # image_gray_3chan[,,0]=  image_gray
+        heatmap_slice_image_3chan=np.zeros((frame_height,frame_width,3), np.float32)
+        heatmap_slice_image_3chan[:, :, 2] = heatmap_slice_image
+
+        print(image_gray_3chan.shape)
+        print(heatmap_slice_image_3chan.shape)
+        image_w_heatmap = cv2.addWeighted(image_gray_3chan,0.7,heatmap_slice_image_3chan,0.3,0)
+        cv2.imwrite(os.path.join(pose_dir, 'heatmap_{:08d}.jpg'.format(count)), image_w_heatmap)
+        # mod: dont skip frames
+        # if len(pose_preds) == 0:
+        #     count += 1
+        #     continue
+
+        print("Find person pose at {:03.2f} fps".format(1/(then - now)))
 
         new_csv_row = []
         for coords in pose_preds:
@@ -248,17 +323,21 @@ def main():
                 x_coord, y_coord = int(coord[0]), int(coord[1])
                 cv2.circle(image_debug, (x_coord, y_coord), 4, (255, 0, 0), 2)
                 new_csv_row.extend([x_coord, y_coord])
+            # draw skeleton
+            draw_skeleton(image_debug, coords)
 
         total_then = time.time()
-        text = "{:03.2f} sec".format(total_then - total_now)
+        text = "{:03.2f} fps".format(1/(total_then - total_now))
         cv2.putText(image_debug, text, (100, 50), cv2.FONT_HERSHEY_SIMPLEX,
                     1, (0, 0, 255), 2, cv2.LINE_AA)
 
         csv_output_rows.append(new_csv_row)
         img_file = os.path.join(pose_dir, 'pose_{:08d}.jpg'.format(count))
         cv2.imwrite(img_file, image_debug)
-        outcap.write(image_debug)
-
+        outcap.write(np.uint8(image_w_heatmap))
+    
+    then_full= time.time()
+    print("Processing complete at average {:03.2f} fps".format(count/(then_full - now_full)))
     # write csv
     csv_headers = ['frame']
     if cfg.DATASET.DATASET_TEST == 'coco':

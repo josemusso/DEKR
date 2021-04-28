@@ -1,9 +1,3 @@
-# ignore videos
-**/*.avi
-**/*.AVI
-**/*.mov
-**/*.mp4
-
 # experiment folder
 data/
 output/
