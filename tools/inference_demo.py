@@ -252,7 +252,7 @@ def main():
         frame_width = int(vidcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     outcap = cv2.VideoWriter('{}/{}_pose.mp4'.format(args.outputDir, os.path.splitext(os.path.basename(args.videoFile))[0]),
-                             cv2.VideoWriter_fourcc(*'avc1'), int(skip_frame_cnt), (frame_width, frame_height))
+                             cv2.VideoWriter_fourcc(*'MP4V'), int(skip_frame_cnt), (frame_width, frame_height))
 
     count = 0
     now_full= time.time()
