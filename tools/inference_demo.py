@@ -313,7 +313,7 @@ def main():
         # print(heatmap_slice_image_3chan.shape)
         image_w_heatmap = cv2.addWeighted(image_gray_3chan,0.7,heatmap_slice_image_3chan,0.3,0)
         # write heatmap image
-        # cv2.imwrite(os.path.join(pose_dir, 'heatmap_{:08d}.jpg'.format(count)), image_w_heatmap)
+        cv2.imwrite(os.path.join(pose_dir, 'heatmap_{:08d}.jpg'.format(count)), image_w_heatmap)
         # mod: dont skip frames
         # if len(pose_preds) == 0:
         #     count += 1
@@ -339,7 +339,7 @@ def main():
         csv_output_rows.append(new_csv_row)
         # write detections image
         img_file = os.path.join(pose_dir, 'pose_{:08d}.jpg'.format(count))
-        # cv2.imwrite(img_file, image_debug)
+        cv2.imwrite(img_file, image_debug)
 
         # choose to write detections or heatmap
         # outcap.write(np.uint8(image_w_heatmap))
