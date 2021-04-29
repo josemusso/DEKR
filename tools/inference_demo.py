@@ -51,7 +51,7 @@ from utils.transforms import up_interpolate
 if torch.cuda.is_available():
     print('Using GPU')
     CTX = torch.device('cuda')
-else
+else:
     print('Using CPU')
     torch.device('cpu')
 
