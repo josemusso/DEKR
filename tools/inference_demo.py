@@ -49,7 +49,7 @@ from utils.transforms import get_multi_scale_size
 from utils.transforms import up_interpolate
 
 if torch.cuda.is_available():
-    print('Using GPU')
+    print('Using GPU:' + torch.cuda.get_device_name(0))
     CTX = torch.device('cuda')
 else:
     print('Using CPU')
@@ -290,9 +290,9 @@ def main():
         then = time.time()
 
         # save heatmap_slice as image over original image
-        print(heatmap_slice.shape)
-        print(np.max(heatmap_slice))
-        print(np.min(heatmap_slice))
+        # print(heatmap_slice.shape)
+        # print(np.max(heatmap_slice))
+        # print(np.min(heatmap_slice))
         # plt.imshow(heatmap_slice, cmap='hot', interpolation='nearest')
         # plt.show()
         # plt.savefig(os.path.join(pose_dir, 'heatmap_{:08d}.jpg'.format(count)))
@@ -309,10 +309,11 @@ def main():
         heatmap_slice_image_3chan=np.zeros((frame_height,frame_width,3), np.float32)
         heatmap_slice_image_3chan[:, :, 2] = heatmap_slice_image
 
-        print(image_gray_3chan.shape)
-        print(heatmap_slice_image_3chan.shape)
+        # print(image_gray_3chan.shape)
+        # print(heatmap_slice_image_3chan.shape)
         image_w_heatmap = cv2.addWeighted(image_gray_3chan,0.7,heatmap_slice_image_3chan,0.3,0)
-        cv2.imwrite(os.path.join(pose_dir, 'heatmap_{:08d}.jpg'.format(count)), image_w_heatmap)
+        # write heatmap image
+        # cv2.imwrite(os.path.join(pose_dir, 'heatmap_{:08d}.jpg'.format(count)), image_w_heatmap)
         # mod: dont skip frames
         # if len(pose_preds) == 0:
         #     count += 1
@@ -336,8 +337,9 @@ def main():
                     1, (0, 0, 255), 2, cv2.LINE_AA)
 
         csv_output_rows.append(new_csv_row)
+        # write detections image
         img_file = os.path.join(pose_dir, 'pose_{:08d}.jpg'.format(count))
-        cv2.imwrite(img_file, image_debug)
+        # cv2.imwrite(img_file, image_debug)
 
         # choose to write detections or heatmap
         # outcap.write(np.uint8(image_w_heatmap))
