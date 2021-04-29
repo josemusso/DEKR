@@ -1,0 +1,4 @@
+name: DEKR
+channels:
+  - defaults
+prefix: /home/jose/anaconda3/envs/DEKR

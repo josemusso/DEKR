@@ -49,7 +49,12 @@ from utils.transforms import get_multi_scale_size
 from utils.transforms import up_interpolate
 
 CTX = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-
+if torch.cuda.is_available():
+    print('Using GPU')
+    CTX = torch.device('cuda')
+else
+    print('Using CPU')
+    torch.device('cpu')
 
 COCO_KEYPOINT_INDEXES = {
     0: 'nose',
@@ -334,8 +339,11 @@ def main():
         csv_output_rows.append(new_csv_row)
         img_file = os.path.join(pose_dir, 'pose_{:08d}.jpg'.format(count))
         cv2.imwrite(img_file, image_debug)
-        outcap.write(np.uint8(image_w_heatmap))
-    
+
+        # choose to write detections or heatmap
+        # outcap.write(np.uint8(image_w_heatmap))
+        outcap.write(np.uint8(image_debug))
+
     then_full= time.time()
     print("Processing complete at average {:03.2f} fps".format(count/(then_full - now_full)))
     # write csv
