@@ -35,7 +35,6 @@ dependencies:
   - xz=5.2.5=h7b6447c_0
   - zlib=1.2.11=h7b6447c_3
   - pip:
-    - crowdposetools==2.0
     - dataclasses==0.8
     - ffmpeg==1.4
     - json-tricks==3.15.5

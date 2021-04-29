@@ -49,7 +49,7 @@ from utils.transforms import get_multi_scale_size
 from utils.transforms import up_interpolate
 
 if torch.cuda.is_available():
-    print('Using GPU:' + torch.cuda.get_device_name(0))
+    print('Using GPU: ' + torch.cuda.get_device_name(0))
     CTX = torch.device('cuda')
 else:
     print('Using CPU')
@@ -239,8 +239,7 @@ def main():
     fps = vidcap.get(cv2.CAP_PROP_FPS)
     length = int(vidcap.get(cv2.CAP_PROP_FRAME_COUNT))
     if fps < args.inferenceFps:
-        raise ValueError('desired inference fps is ' +
-                         str(args.inferenceFps)+' but video fps is '+str(fps))
+        raise ValueError('Video file not found!')
     skip_frame_cnt = round(fps / args.inferenceFps)
     frame_width = int(vidcap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_height = int(vidcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
