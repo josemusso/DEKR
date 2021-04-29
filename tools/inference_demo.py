@@ -48,7 +48,6 @@ from utils.transforms import get_final_preds
 from utils.transforms import get_multi_scale_size
 from utils.transforms import up_interpolate
 
-CTX = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 if torch.cuda.is_available():
     print('Using GPU')
     CTX = torch.device('cuda')
