@@ -385,9 +385,12 @@ def main():
     cv2.destroyAllWindows()
 
     # send output files to S3 bucket research-test-s3-bucket
-    s3 = boto3.resource('s3')
-    s3.Bucket('research-test-s3-bucket').put_object(ACL='public-read',Key=video_dets_name, Body=video_dets_name)
-    s3.Bucket('research-test-s3-bucket').put_object(ACL='public-read',Key=video_heatmaps_name, Body=video_heatmaps_name)
+    s3_client = boto3.client('s3')
+    # s3.Bucket('research-test-s3-bucket').put_object(ACL='public-read',Key=video_dets_name, Body=video_dets_name)
+    # s3.Bucket('research-test-s3-bucket').put_object(ACL='public-read',Key=video_heatmaps_name, Body=video_heatmaps_name)
+    response = s3_client.upload_file(video_dets_name, 'research-test-s3-bucket', video_dets_name)
+    response = s3_client.upload_file(video_heatmaps_name, 'research-test-s3-bucket', video_heatmaps_name)
+    print('Videos')
 
 if __name__ == '__main__':
     main()
