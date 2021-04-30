@@ -388,10 +388,8 @@ def main():
     s3_client = boto3.client('s3')
     # s3.Bucket('research-test-s3-bucket').put_object(ACL='public-read',Key=video_dets_name, Body=video_dets_name)
     # s3.Bucket('research-test-s3-bucket').put_object(ACL='public-read',Key=video_heatmaps_name, Body=video_heatmaps_name)
-    response1 = s3_client.upload_file(video_dets_name, 'research-test-s3-bucket', video_dets_name)
-    response2 = s3_client.upload_file(video_heatmaps_name, 'research-test-s3-bucket', video_heatmaps_name)
-    print('Videos upload response was: ' + str(response1))
-    print('Videos upload response was: ' + str(response2))
+    s3_client.upload_file(video_dets_name, 'research-test-s3-bucket', video_dets_name)
+    s3_client.upload_file(video_heatmaps_name, 'research-test-s3-bucket', video_heatmaps_name)
 
 if __name__ == '__main__':
     main()
