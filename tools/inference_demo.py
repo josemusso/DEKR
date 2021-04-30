@@ -254,7 +254,7 @@ def main():
 
     # define writers to save videos
     video_dets_name = '{}/{}_pose.mp4'.format(args.outputDir, os.path.splitext(os.path.basename(args.videoFile))[0])
-    video_heatmaps_name'{}/{}_pose_heatmap.mp4'.format(args.outputDir, os.path.splitext(os.path.basename(args.videoFile))[0])
+    video_heatmaps_name = '{}/{}_pose_heatmap.mp4'.format(args.outputDir, os.path.splitext(os.path.basename(args.videoFile))[0])
     outcap = cv2.VideoWriter(video_dets_name,
                              cv2.VideoWriter_fourcc(*'MP4V'), int(skip_frame_cnt), (frame_width, frame_height))
     outcap_heatmap = cv2.VideoWriter(video_heatmap_name,
