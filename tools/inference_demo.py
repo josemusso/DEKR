@@ -19,6 +19,7 @@ import time
 import sys
 sys.path.append("../lib")
 
+import boto3
 import cv2
 import numpy as np
 from PIL import Image
@@ -143,6 +144,7 @@ def get_pose_estimation_prediction(cfg, model, image, vis_thre, transforms):
 
         # get heatmap of every frame, select slice depending on keypoint
         selected_keypoint = 14
+        heatmap_slice = []
         heatmap_slice = heatmap_sum.cpu().numpy()[0,selected_keypoint]
 
         heatmap_avg = heatmap_sum/len(cfg.TEST.SCALE_FACTOR)
@@ -164,7 +166,7 @@ def get_pose_estimation_prediction(cfg, model, image, vis_thre, transforms):
                 final_results.append(final_poses[i])
 
         if len(final_results) == 0:
-            return []
+            return [],[]
 
     return final_results, heatmap_slice
 
@@ -250,7 +252,12 @@ def main():
         frame_height = int(vidcap.get(cv2.CAP_PROP_FRAME_WIDTH))
         frame_width = int(vidcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    outcap = cv2.VideoWriter('{}/{}_pose.mp4'.format(args.outputDir, os.path.splitext(os.path.basename(args.videoFile))[0]),
+    # define writers to save videos
+    video_dets_name = '{}/{}_pose.mp4'.format(args.outputDir, os.path.splitext(os.path.basename(args.videoFile))[0])
+    video_heatmaps_name'{}/{}_pose_heatmap.mp4'.format(args.outputDir, os.path.splitext(os.path.basename(args.videoFile))[0])
+    outcap = cv2.VideoWriter(video_dets_name,
+                             cv2.VideoWriter_fourcc(*'MP4V'), int(skip_frame_cnt), (frame_width, frame_height))
+    outcap_heatmap = cv2.VideoWriter(video_heatmap_name,
                              cv2.VideoWriter_fourcc(*'MP4V'), int(skip_frame_cnt), (frame_width, frame_height))
 
     count = 0
@@ -298,51 +305,59 @@ def main():
 
         # normalizar y mapear a 0-255 para hacer imagen
         # no normalizar para que se vea la confiabilidad del detector
-        heatmap_slice_image = (heatmap_slice/np.max(heatmap_slice))*255.0
-        heatmap_slice_image = cv2.resize(heatmap_slice_image,(frame_width,frame_height))
 
+        # generate 3 chann Gray image
         image_gray = np.asarray(cv2.cvtColor(image_debug, cv2.COLOR_BGR2GRAY), np.float32)
         image_gray_3chan=cv2.cvtColor(image_gray, cv2.COLOR_GRAY2BGR)
-        # image_gray_3chan = np.zeros((height,width,3), np.float32)
-        # image_gray_3chan[,,0]=  image_gray
-        heatmap_slice_image_3chan=np.zeros((frame_height,frame_width,3), np.float32)
-        heatmap_slice_image_3chan[:, :, 2] = heatmap_slice_image
 
-        # print(image_gray_3chan.shape)
-        # print(heatmap_slice_image_3chan.shape)
-        image_w_heatmap = cv2.addWeighted(image_gray_3chan,0.7,heatmap_slice_image_3chan,0.3,0)
-        # write heatmap image
-        cv2.imwrite(os.path.join(pose_dir, 'heatmap_{:08d}.jpg'.format(count)), image_w_heatmap)
-        # mod: dont skip frames
-        # if len(pose_preds) == 0:
-        #     count += 1
-        #     continue
+        # case where person is detected
+        if pose_preds:
+            heatmap_slice_image = (heatmap_slice/np.max(heatmap_slice))*255.0
+            heatmap_slice_image = cv2.resize(heatmap_slice_image,(frame_width,frame_height))
 
-        print("Find person pose at {:03.2f} fps".format(1/(then - now)))
+            heatmap_slice_image_3chan=np.zeros((frame_height,frame_width,3), np.float32)
+            heatmap_slice_image_3chan[:, :, 2] = heatmap_slice_image
 
-        new_csv_row = []
-        for coords in pose_preds:
-            # Draw each point on image
-            for coord in coords:
-                x_coord, y_coord = int(coord[0]), int(coord[1])
-                cv2.circle(image_debug, (x_coord, y_coord), 4, (255, 0, 0), 2)
-                new_csv_row.extend([x_coord, y_coord])
-            # draw skeleton
-            draw_skeleton(image_debug, coords)
+            image_w_heatmap = cv2.addWeighted(image_gray_3chan,0.5,heatmap_slice_image_3chan,0.5,0)
+
+            # write heatmap image
+            cv2.imwrite(os.path.join(pose_dir, 'heatmap_{:08d}.jpg'.format(count)), image_w_heatmap)
+        
+            print("Found person pose at {:03.2f} fps".format(1/(then - now)))
+
+            new_csv_row = []
+            for coords in pose_preds:
+                # Draw each point on image
+                for coord in coords:
+                    x_coord, y_coord = int(coord[0]), int(coord[1])
+                    cv2.circle(image_debug, (x_coord, y_coord), 4, (255, 0, 0), 2)
+                    new_csv_row.extend([x_coord, y_coord])
+                # draw skeleton
+                draw_skeleton(image_debug, coords)
+            csv_output_rows.append(new_csv_row)
+
+        # case no person detected in frame
+        else:
+            image_w_heatmap = image_gray_3chan
+            cv2.imwrite(os.path.join(pose_dir, 'heatmap_{:08d}.jpg'.format(count)), image_w_heatmap)
+            print("No person pose found at {:03.2f} fps".format(1/(then - now)))
+
+            # append empty row on csv
+            new_csv_row = []
+            csv_output_rows.append(new_csv_row)
 
         total_then = time.time()
         text = "{:03.2f} fps".format(1/(total_then - total_now))
         cv2.putText(image_debug, text, (100, 50), cv2.FONT_HERSHEY_SIMPLEX,
                     1, (0, 0, 255), 2, cv2.LINE_AA)
 
-        csv_output_rows.append(new_csv_row)
         # write detections image
         img_file = os.path.join(pose_dir, 'pose_{:08d}.jpg'.format(count))
         cv2.imwrite(img_file, image_debug)
 
-        # choose to write detections or heatmap
-        # outcap.write(np.uint8(image_w_heatmap))
+        # write detections and heatmap video
         outcap.write(np.uint8(image_debug))
+        outcap_heatmap.write(np.uint8(image_w_heatmap))
 
     then_full= time.time()
     print("Processing complete at average {:03.2f} fps".format(count/(then_full - now_full)))
@@ -365,9 +380,14 @@ def main():
 
     vidcap.release()
     outcap.release()
+    outcap_heatmap.release()
 
     cv2.destroyAllWindows()
 
+    # send output files to S3 bucket research-test-s3-bucket
+    s3 = boto3.resource('s3')
+    s3.Bucket('research-test-s3-bucket').put_object(ACL='public-read',Key=video_dets_name, Body=video_dets_name)
+    s3.Bucket('research-test-s3-bucket').put_object(ACL='public-read',Key=video_heatmaps_name, Body=video_heatmaps_name)
 
 if __name__ == '__main__':
     main()
