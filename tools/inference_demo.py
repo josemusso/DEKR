@@ -390,6 +390,8 @@ def main():
     # s3.Bucket('research-test-s3-bucket').put_object(ACL='public-read',Key=video_heatmaps_name, Body=video_heatmaps_name)
     s3_client.upload_file(video_dets_name, 'research-test-s3-bucket', video_dets_name)
     s3_client.upload_file(video_heatmaps_name, 'research-test-s3-bucket', video_heatmaps_name)
+    s3_client.upload_file(csv_output_filename, 'research-test-s3-bucket', csv_output_filename)
+    print('Files uploaded to S3 bucket')
 
 if __name__ == '__main__':
     main()
