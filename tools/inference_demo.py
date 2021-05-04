@@ -391,7 +391,22 @@ def main():
     s3_client.upload_file(video_dets_name, 'research-test-s3-bucket', video_dets_name)
     s3_client.upload_file(video_heatmaps_name, 'research-test-s3-bucket', video_heatmaps_name)
     s3_client.upload_file(csv_output_filename, 'research-test-s3-bucket', csv_output_filename)
-    print('Files uploaded to S3 bucket')
+    
+    # get download link
+    download_link_dets = s3_client.generate_presigned_url('get_object',
+                                                    Params={'Bucket': 'research-test-s3-bucket',
+                                                            'Key': video_dets_name},
+                                                    ExpiresIn=300)
+
+    download_link_heatmaps = s3_client.generate_presigned_url('get_object',
+                                                    Params={'Bucket': 'research-test-s3-bucket',
+                                                            'Key': video_heatmaps_name},
+                                                    ExpiresIn=300)
+
+    print('Files uploaded to S3 bucket.')
+    print('Download DETECTIONS video: {}'.format(download_link_dets))
+    print('Download HEATMAPS video: {}'.format(download_link_heatmaps))
+    print('Download links expire in 5 min.')
 
 if __name__ == '__main__':
     main()
