@@ -404,8 +404,8 @@ def main():
                                                     ExpiresIn=300)
 
     print('Files uploaded to S3 bucket.')
-    print('Download DETECTIONS video: {}'.format(download_link_dets))
-    print('Download HEATMAPS video: {}'.format(download_link_heatmaps))
+    print('Download DETECTIONS video:\n {}'.format(download_link_dets))
+    print('Download HEATMAPS video:\n {}'.format(download_link_heatmaps))
     print('Download links expire in 5 min.')
 
 if __name__ == '__main__':
