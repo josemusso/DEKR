@@ -345,7 +345,7 @@ def main():
             # format detections as Aictive server mediapipe_test for ex. eval.
             #################
             # pose_pred[persona][punto][x:0 o y:1]
-            # ver si están normalizados
+            # ver si estan normalizados
 
             array_x = [
                 abs((pose_preds[0][6][0]+pose_preds[0][5][0])/2),       # chest mid (artificial)
