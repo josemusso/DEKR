@@ -506,8 +506,8 @@ def main():
             ]
             data.append(frame_data)
 
-            # if count == 90:
-            #     break
+            if count == 90:
+                break
         
     # create df with whole video info to pass to score.Exercises
     fieldnames = ['Second', 'Angle', 'kpt_0', 'kpt_1', 'kpt_2', 'kpt_3', 'kpt_4', 'kpt_5', 
