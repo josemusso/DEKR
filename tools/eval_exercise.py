@@ -562,9 +562,11 @@ def main():
     # upload csv
     s3_client.upload_file(csv_output_filename, 'research-test-s3-bucket', csv_output_filename)
     # upload dataframe csv
-    s3_client.upload_file('/output/dataframe.csv', 'research-test-s3-bucket', '/output/dataframe.csv')
+    csv_dataframe_filename = os.path.join(args.outputDir, 'dataframe.csv')
+    s3_client.upload_file(csv_dataframe_filename, 'research-test-s3-bucket', csv_dataframe_filename)
     # upload json
-    s3_client.upload_file('/output/json/'+tag+'.json', 'research-test-s3-bucket', '/output/json/'+tag+'.json')
+    json_filename = os.path.join(args.outputDir, 'json/'+tag+'.json')
+    s3_client.upload_file(json_filename, 'research-test-s3-bucket', json_filename)
 
     # get download links
     download_link_dets = s3_client.generate_presigned_url('get_object',
@@ -578,11 +580,11 @@ def main():
                                                     ExpiresIn=300)
     download_link_dataframe = s3_client.generate_presigned_url('get_object',
                                                     Params={'Bucket': 'research-test-s3-bucket',
-                                                            'Key': '/output/dataframe.csv'},
+                                                            'Key': csv_dataframe_filename},
                                                     ExpiresIn=300)
     download_link_json = s3_client.generate_presigned_url('get_object',
                                                     Params={'Bucket': 'research-test-s3-bucket',
-                                                            'Key': '/output/json/'+tag+'.json'},
+                                                            'Key': json_filename},
                                                     ExpiresIn=300)
 
     print('Files uploaded to S3 bucket.')
