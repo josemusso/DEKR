@@ -254,7 +254,7 @@ def main():
     frame_height = int(vidcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     # adjust dimensions if rotation is needed
-    rotate = True
+    rotate = False
     if rotate:    
         frame_height = int(vidcap.get(cv2.CAP_PROP_FRAME_WIDTH))
         frame_width = int(vidcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
