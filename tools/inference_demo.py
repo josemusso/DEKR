@@ -94,8 +94,8 @@ CROWDPOSE_KEYPOINT_INDEXES = {
     13: 'neck'
 }
 
-def draw_skeleton(image, points):
-    skeleton = [
+def draw_skeleton(image, points, config_dataset):
+    skeleton_coco = [
                 # # [16, 14], [14, 12], [17, 15], [15, 13], [12, 13], [6, 12], [7, 13], [6, 7], [6, 8],
                 # # [7, 9], [8, 10], [9, 11], [2, 3], [1, 2], [1, 3], [2, 4], [3, 5], [4, 6], [5, 7]
                 # [15, 13], [13, 11], [16, 14], [14, 12], [11, 12], [5, 11], [6, 12], [5, 6], [5, 7],
@@ -105,14 +105,24 @@ def draw_skeleton(image, points):
                 [0, 5], [0, 6]
     ]
 
-    purple = (255,0,255)
-    yellow = (0,255,255)
+    skeleton_crowdpose = [
+                [10, 8], [8, 6], [11, 9], [9, 7], [6, 7], [0, 6], [1, 7], [0, 1], [0, 2],
+                [1, 3], [2, 4], [3, 5], [1, 13], [0, 13], [13, 12]
+    ]
+
+    # select skeleton to draw
+    if cfg.DATASET.DATASET_TEST == 'coco':
+        skeleton = skeleton_coco
+        color = (0,255,255)
+    else:
+        skeleton = skeleton_crowdpose
+        color = (255,0,255)
 
     for i, joint in enumerate(skeleton):
             pt1, pt2 = points[joint]
             image = cv2.line(
                 image, (int(pt1[0]), int(pt1[1])), (int(pt2[0]), int(pt2[1])),
-                purple, 2)
+                color, 2)
 
     return image
 
@@ -143,7 +153,7 @@ def get_pose_estimation_prediction(cfg, model, image, vis_thre, transforms):
             )
 
         # get heatmap of every frame, select slice depending on keypoint
-        selected_keypoint = 14
+        selected_keypoint = 12
         heatmap_slice = []
         heatmap_slice = heatmap_sum.cpu().numpy()[0,selected_keypoint]
 
@@ -333,7 +343,7 @@ def main():
                     cv2.circle(image_debug, (x_coord, y_coord), 4, (255, 0, 0), 2)
                     new_csv_row.extend([x_coord, y_coord])
                 # draw skeleton
-                draw_skeleton(image_debug, coords)
+                draw_skeleton(image_debug, coords, cfg.DATASET.DATASET_TEST)
             csv_output_rows.append(new_csv_row)
 
         # case no person detected in frame

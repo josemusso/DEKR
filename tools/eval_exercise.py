@@ -55,6 +55,8 @@ import modules.score as score
 import pandas as pd
 pd.options.mode.chained_assignment = None
 import json
+from collections import deque 
+from statistics import mean, stdev
 
 if torch.cuda.is_available():
     print('Using GPU: ' + torch.cuda.get_device_name(0))
@@ -101,8 +103,20 @@ CROWDPOSE_KEYPOINT_INDEXES = {
     13: 'neck'
 }
 
-def draw_skeleton(image, points):
-    skeleton = [
+CROWDPOSE_KEYPOINT_SEGMENTS = [
+    {'name':'left_humerus', 'segment':[0,2]},
+    {'name':'right_humerus', 'segment':[1,3]},
+    {'name':'left_radius', 'segment':[2,4]},
+    {'name':'right_radius', 'segment':[3,5]},
+    {'name':'left_femur', 'segment':[6,8]},
+    {'name':'right_femur', 'segment':[7,9]},
+    {'name':'left_tibia', 'segment':[8,10]},
+    {'name':'right_tibia', 'segment':[9,11]},
+    {'name':'left_core', 'segment':[0,6]},
+    {'name':'right_core', 'segment':[1,7]}]
+
+def draw_skeleton(image, points, config_dataset):
+    skeleton_coco = [
                 # # [16, 14], [14, 12], [17, 15], [15, 13], [12, 13], [6, 12], [7, 13], [6, 7], [6, 8],
                 # # [7, 9], [8, 10], [9, 11], [2, 3], [1, 2], [1, 3], [2, 4], [3, 5], [4, 6], [5, 7]
                 # [15, 13], [13, 11], [16, 14], [14, 12], [11, 12], [5, 11], [6, 12], [5, 6], [5, 7],
@@ -112,19 +126,91 @@ def draw_skeleton(image, points):
                 [0, 5], [0, 6]
     ]
 
-    purple = (255,0,255)
-    yellow = (0,255,255)
+    skeleton_crowdpose = [
+                [10, 8], [8, 6], [11, 9], [9, 7], [6, 7], [0, 6], [1, 7], [0, 1], [0, 2],
+                [1, 3], [2, 4], [3, 5], [1, 13], [0, 13], [13, 12]
+    ]
+
+    # select skeleton to draw
+    if cfg.DATASET.DATASET_TEST == 'coco':
+        skeleton = skeleton_coco
+        color = (0,255,255)
+    else:
+        skeleton = skeleton_crowdpose
+        color = (255,0,255)
 
     for i, joint in enumerate(skeleton):
             pt1, pt2 = points[joint]
             image = cv2.line(
                 image, (int(pt1[0]), int(pt1[1])), (int(pt2[0]), int(pt2[1])),
-                purple, 2)
+                color, 2)
 
     return image
 
+def draw_skeleton_ept(image, points, config_dataset, angles, angles_buffer):
+    skeleton_coco = [
+                # # [16, 14], [14, 12], [17, 15], [15, 13], [12, 13], [6, 12], [7, 13], [6, 7], [6, 8],
+                # # [7, 9], [8, 10], [9, 11], [2, 3], [1, 2], [1, 3], [2, 4], [3, 5], [4, 6], [5, 7]
+                # [15, 13], [13, 11], [16, 14], [14, 12], [11, 12], [5, 11], [6, 12], [5, 6], [5, 7],
+                # [6, 8], [7, 9], [8, 10], [1, 2], [0, 1], [0, 2], [1, 3], [2, 4], [3, 5], [4, 6]
+                [15, 13], [13, 11], [16, 14], [14, 12], [11, 12], [5, 11], [6, 12], [5, 6], [5, 7],
+                [6, 8], [7, 9], [8, 10], [1, 2], [0, 1], [0, 2], [1, 3], [2, 4],  # [3, 5], [4, 6]
+                [0, 5], [0, 6]
+    ]
 
-def get_pose_estimation_prediction(cfg, model, image, vis_thre, transforms):
+    skeleton_crowdpose = [
+                [10, 8], [8, 6], [11, 9], [9, 7], [6, 7], [0, 6], [1, 7], [0, 1], [0, 2],
+                [1, 3], [2, 4], [3, 5], [1, 13], [0, 13], [13, 12]
+    ]
+
+    # select skeleton to draw
+    if cfg.DATASET.DATASET_TEST == 'coco':
+        skeleton = skeleton_coco
+        color = (0,255,255)
+    else:
+        skeleton = skeleton_crowdpose
+        color = (0,255,0) # change to green
+
+    # draw all lines
+    for i, joint in enumerate(skeleton):
+            pt1, pt2 = points[joint]
+            image = cv2.line(
+                image, (int(pt1[0]), int(pt1[1])), (int(pt2[0]), int(pt2[1])),
+                color, 2)
+
+    # draw skeleton lines based on corresponding angle variation
+    for angle in angles:
+        if len(angles_buffer[angle['title']])<3:
+            continue # cannot get stdev with too few values
+        pt1, pt2 = points[angle['segment']]
+        delta_angle = stdev(angles_buffer[angle['title']])
+        max_var = 5
+        delta_angle_norm = (min(delta_angle, max_var))/max_var # define max stddev to be red segment
+        print(angle['title'] +' '+ str(delta_angle_norm))
+        color = (0,int(255*(1-delta_angle_norm)),int(255*(delta_angle_norm))) #BGR
+        print(color)
+        image = cv2.line(image, (int(pt1[0]), int(pt1[1])), (int(pt2[0]), int(pt2[1])),
+            color, 2)
+
+    # draw joint circle radious proportional to angle described
+    # ONLY FOR EPT TAG
+    angle = [angles[2].get('value'),angles[3].get('value'),
+            angles[0].get('value'),angles[1].get('value'),
+            0,0,
+            angles[4].get('value'),angles[5].get('value'),
+            angles[6].get('value'),angles[7].get('value'),
+            0,0,
+            0,0]
+    count = 0
+    for point in points:
+        # same order as defined
+        x_coord, y_coord = int(point[0]), int(point[1])
+        cv2.circle(image, (x_coord, y_coord), int(4+(((angle[count]/360)**2)*50)), (255, 0, 0), 5)
+        count +=1
+    return image
+
+
+def get_pose_estimation_prediction(cfg, model, image, vis_thre, selected_keypoint, transforms):
     # size at scale 1.0
     base_size, center, scale = get_multi_scale_size(
         image, cfg.DATASET.INPUT_SIZE, 1.0, 1.0
@@ -149,8 +235,6 @@ def get_pose_estimation_prediction(cfg, model, image, vis_thre, transforms):
                 cfg, heatmap_sum, poses, heatmap, posemap, scale
             )
 
-        # get heatmap of every frame, select slice depending on keypoint
-        selected_keypoint = 14
         heatmap_slice = []
         heatmap_slice = heatmap_sum.cpu().numpy()[0,selected_keypoint]
 
@@ -253,8 +337,18 @@ def main():
     frame_width = int(vidcap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_height = int(vidcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
+    ###### PARAMS
+    # select keypoint joint to display in heatmap, view COCO INDEXES to choose
+    selected_keypoint = 0
+
+    # tag and side are examples by now
+    # tag: 
+    tag = 'EPT' # EPT para demos de uso de brazo y piernas
+    # side: True: der, False: izq
+    side = True
+
     # adjust dimensions if rotation is needed
-    rotate = False
+    rotate = True
     if rotate:    
         frame_height = int(vidcap.get(cv2.CAP_PROP_FRAME_WIDTH))
         frame_width = int(vidcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -262,14 +356,29 @@ def main():
     # define writers to save videos
     video_dets_name = '{}/{}_pose.mp4'.format(args.outputDir, os.path.splitext(os.path.basename(args.videoFile))[0])
     video_heatmaps_name = '{}/{}_pose_heatmap.mp4'.format(args.outputDir, os.path.splitext(os.path.basename(args.videoFile))[0])
+    video_ept_name = '{}/{}_pose_ept.mp4'.format(args.outputDir, os.path.splitext(os.path.basename(args.videoFile))[0])
     outcap = cv2.VideoWriter(video_dets_name,
                              cv2.VideoWriter_fourcc(*'MP4V'), int(skip_frame_cnt), (frame_width, frame_height))
-    outcap_heatmap = cv2.VideoWriter(video_heatmaps_name,
+    # outcap_heatmap = cv2.VideoWriter(video_heatmaps_name,
+    #                          cv2.VideoWriter_fourcc(*'MP4V'), int(skip_frame_cnt), (frame_width, frame_height))
+    outcap_ept = cv2.VideoWriter(video_ept_name,
                              cv2.VideoWriter_fourcc(*'MP4V'), int(skip_frame_cnt), (frame_width, frame_height))
 
     count = 0
     now_full= time.time()
     data = []
+    # deque: store angle values over frames
+    angles_buffer={
+        'Left Elbow':deque([], maxlen=15),
+        'Right Elbow':deque([], maxlen=15),
+        'Left Shoulder':deque([], maxlen=15),
+        'Right Shoulder':deque([], maxlen=15),
+        'Left Hip':deque([], maxlen=15),
+        'Right Hip':deque([], maxlen=15),
+        'Left Knee':deque([], maxlen=15),
+        'Right Knee':deque([], maxlen=15)
+    }
+
     while vidcap.isOpened():
         total_now = time.time()
         ret, image_bgr = vidcap.read()
@@ -279,8 +388,8 @@ def main():
             image_bgr = cv2.rotate(image_bgr, cv2.cv2.ROTATE_90_CLOCKWISE)
             # image_bgr = cv2.rotate(image_bgr, cv2.cv2.ROTATE_90_COUNTERCLOCKWISE)
         
+        # image_bgr = cv2.flip(image_bgr, 0)
         # image_bgr = cv2.flip(image_bgr, 1)
-
 
         if not ret:
             break
@@ -299,8 +408,12 @@ def main():
         now = time.time()
 
         # added return heatmap_slice
-        pose_preds, heatmap_slice = get_pose_estimation_prediction(
-            cfg, pose_model, image_pose, args.visthre, transforms=pose_transform)
+        pose_preds, heatmap_slice = get_pose_estimation_prediction(cfg, 
+                                                                    pose_model, 
+                                                                    image_pose, 
+                                                                    args.visthre, 
+                                                                    selected_keypoint,
+                                                                    transforms=pose_transform)
         then = time.time()
 
         # save heatmap_slice as image over original image
@@ -338,7 +451,7 @@ def main():
                     cv2.circle(image_debug, (x_coord, y_coord), 4, (255, 0, 0), 2)
                     new_csv_row.extend([x_coord, y_coord])
                 # draw skeleton
-                draw_skeleton(image_debug, coords)
+                draw_skeleton(image_debug, coords, cfg.DATASET.DATASET_TEST)
             csv_output_rows.append(new_csv_row)
 
             #################
@@ -347,59 +460,116 @@ def main():
             # pose_pred[persona][punto][x:0 o y:1]
             # ver si estan normalizados
 
-            array_x = [
-                abs((pose_preds[0][6][0]+pose_preds[0][5][0])/2),       # chest mid (artificial)
-                pose_preds[0][0][0],     # nose
-                0,                       # 
-                pose_preds[0][5][0],     # left_shoulder
-                pose_preds[0][7][0],     # left_elbow
-                pose_preds[0][9][0],     # left_wrist
-                pose_preds[0][11][0],    # left_hip
-                pose_preds[0][13][0],    # left_knee
-                pose_preds[0][15][0],    # left_ankle
-                pose_preds[0][6][0],     # right_shoulder
-                pose_preds[0][8][0],     # right_elbow
-                pose_preds[0][10][0],    # right_wrist
-                pose_preds[0][12][0],    # right_hip
-                pose_preds[0][14][0],    # right_knee
-                pose_preds[0][16][0],    # right_ankle
-                pose_preds[0][2][0],     # right_eye
-                pose_preds[0][1][0],     # left_eye
-                pose_preds[0][4][0],     # right_ear
-                pose_preds[0][3][0],     # left_ear
-                0                       # 
-                # pose_preds[0][][]     # right_heel        # only in mp
-                # pose_preds[0][][]     # right_foot_index  # only in mp
-                # pose_preds[0][][]     # left_heel         # only in mp
-                # pose_preds[0][][]     # left_foot_index   # only in mp
-            ]
+            # config depends on train used: COCO or CROWDPOSE
+            if cfg.DATASET.DATASET_TEST == 'coco':
+                array_x = [
+                    abs((pose_preds[0][6][0]+pose_preds[0][5][0])/2),       # chest mid (artificial)
+                    pose_preds[0][0][0],     # nose
+                    0,                       # 
+                    pose_preds[0][5][0],     # left_shoulder
+                    pose_preds[0][7][0],     # left_elbow
+                    pose_preds[0][9][0],     # left_wrist
+                    pose_preds[0][11][0],    # left_hip
+                    pose_preds[0][13][0],    # left_knee
+                    pose_preds[0][15][0],    # left_ankle
+                    pose_preds[0][6][0],     # right_shoulder
+                    pose_preds[0][8][0],     # right_elbow
+                    pose_preds[0][10][0],    # right_wrist
+                    pose_preds[0][12][0],    # right_hip
+                    pose_preds[0][14][0],    # right_knee
+                    pose_preds[0][16][0],    # right_ankle
+                    pose_preds[0][2][0],     # right_eye
+                    pose_preds[0][1][0],     # left_eye
+                    pose_preds[0][4][0],     # right_ear
+                    pose_preds[0][3][0],     # left_ear
+                    0                       # 
+                    # pose_preds[0][][]     # right_heel        # only in mp
+                    # pose_preds[0][][]     # right_foot_index  # only in mp
+                    # pose_preds[0][][]     # left_heel         # only in mp
+                    # pose_preds[0][][]     # left_foot_index   # only in mp
+                ]
 
-            array_y = [
-                abs((pose_preds[0][6][1]+pose_preds[0][5][1])/2),       # chest mid (artificial)
-                pose_preds[0][0][1],     # nose
-                0,                       # 
-                pose_preds[0][5][1],     # left_shoulder
-                pose_preds[0][7][1],     # left_elbow
-                pose_preds[0][9][1],     # left_wrist
-                pose_preds[0][11][1],    # left_hip
-                pose_preds[0][13][1],    # left_knee
-                pose_preds[0][15][1],    # left_ankle
-                pose_preds[0][6][1],     # right_shoulder
-                pose_preds[0][8][1],     # right_elbow
-                pose_preds[0][10][1],    # right_wrist
-                pose_preds[0][12][1],    # right_hip
-                pose_preds[0][14][1],    # right_knee
-                pose_preds[0][16][1],    # right_ankle
-                pose_preds[0][2][1],     # right_eye
-                pose_preds[0][1][1],     # left_eye
-                pose_preds[0][4][1],     # right_ear
-                pose_preds[0][3][1],     # left_ear
-                0                       # 
-                # pose_preds[0][][]     # right_heel        # only in mp
-                # pose_preds[0][][]     # right_foot_index  # only in mp
-                # pose_preds[0][][]     # left_heel         # only in mp
-                # pose_preds[0][][]     # left_foot_index   # only in mp
-            ]
+                array_y = [
+                    abs((pose_preds[0][6][1]+pose_preds[0][5][1])/2),       # chest mid (artificial)
+                    pose_preds[0][0][1],     # nose
+                    0,                       # 
+                    pose_preds[0][5][1],     # left_shoulder
+                    pose_preds[0][7][1],     # left_elbow
+                    pose_preds[0][9][1],     # left_wrist
+                    pose_preds[0][11][1],    # left_hip
+                    pose_preds[0][13][1],    # left_knee
+                    pose_preds[0][15][1],    # left_ankle
+                    pose_preds[0][6][1],     # right_shoulder
+                    pose_preds[0][8][1],     # right_elbow
+                    pose_preds[0][10][1],    # right_wrist
+                    pose_preds[0][12][1],    # right_hip
+                    pose_preds[0][14][1],    # right_knee
+                    pose_preds[0][16][1],    # right_ankle
+                    pose_preds[0][2][1],     # right_eye
+                    pose_preds[0][1][1],     # left_eye
+                    pose_preds[0][4][1],     # right_ear
+                    pose_preds[0][3][1],     # left_ear
+                    0                       # 
+                    # pose_preds[0][][]     # right_heel        # only in mp
+                    # pose_preds[0][][]     # right_foot_index  # only in mp
+                    # pose_preds[0][][]     # left_heel         # only in mp
+                    # pose_preds[0][][]     # left_foot_index   # only in mp
+                ]
+            # CROWDPOSE CASE
+            else:
+                array_x = [
+                    pose_preds[0][13][1],       # chest mid (neck)  0
+                    pose_preds[0][12][0],     # nose                1
+                    0,                       #                      2
+                    pose_preds[0][0][0],     # left_shoulder        3
+                    pose_preds[0][2][0],     # left_elbow           4
+                    pose_preds[0][4][0],     # left_wrist           5
+                    pose_preds[0][6][0],    # left_hip              6
+                    pose_preds[0][8][0],    # left_knee             7
+                    pose_preds[0][10][0],    # left_ankle           8
+                    pose_preds[0][1][0],     # right_shoulder       9
+                    pose_preds[0][3][0],     # right_elbow          10
+                    pose_preds[0][5][0],    # right_wrist           11
+                    pose_preds[0][7][0],    # right_hip             12
+                    pose_preds[0][9][0],    # right_knee            13
+                    pose_preds[0][11][0],    # right_ankle          14
+                    0,     # right_eye
+                    0,     # left_eye
+                    0,     # right_ear
+                    0,     # left_ear
+                    0                       # 
+                    # pose_preds[0][][]     # right_heel        # only in mp
+                    # pose_preds[0][][]     # right_foot_index  # only in mp
+                    # pose_preds[0][][]     # left_heel         # only in mp
+                    # pose_preds[0][][]     # left_foot_index   # only in mp
+                ]
+
+                array_y = [
+                    pose_preds[0][13][1],       # chest mid (neck)
+                    pose_preds[0][12][1],     # nose
+                    0,                       # 
+                    pose_preds[0][0][1],     # left_shoulder
+                    pose_preds[0][2][1],     # left_elbow
+                    pose_preds[0][4][1],     # left_wrist
+                    pose_preds[0][6][1],    # left_hip
+                    pose_preds[0][8][1],    # left_knee
+                    pose_preds[0][10][1],    # left_ankle
+                    pose_preds[0][1][1],     # right_shoulder
+                    pose_preds[0][3][1],     # right_elbow
+                    pose_preds[0][5][1],    # right_wrist
+                    pose_preds[0][7][1],    # right_hip
+                    pose_preds[0][9][1],    # right_knee
+                    pose_preds[0][11][1],    # right_ankle
+                    0,     # right_eye
+                    0,     # left_eye
+                    0,     # right_ear
+                    0,     # left_ear
+                    0                       # 
+                    # pose_preds[0][][]     # right_heel        # only in mp
+                    # pose_preds[0][][]     # right_foot_index  # only in mp
+                    # pose_preds[0][][]     # left_heel         # only in mp
+                    # pose_preds[0][][]     # left_foot_index   # only in mp
+                ]
 
             # visibility, NOT AVAILABLE BUT CAN BE INFERRED WITH NOSE AND EARS KPs
             array_v = [     
@@ -456,19 +626,14 @@ def main():
 
         # write detections and heatmap video
         outcap.write(np.uint8(image_debug))
-        outcap_heatmap.write(np.uint8(image_w_heatmap))
+        # outcap_heatmap.write(np.uint8(image_w_heatmap))
 
         # after writing both dets and heatmaps videos, calculate angles
         poseEstimate = [array_x, array_y, array_v]
         poseEstimate = np.array(poseEstimate)
-        # tag and side are examples by now
-        # tag: 
-        tag = 'A_T'
-        # side: True: der, False: izq
-        side = True
         exercise = dataScience.Exercises(tag, poseEstimate, side)
         angles = exercise.calculate()
-        print(angles)
+        # print(angles)
 
         # case angles are detected
         if angles != None:
@@ -506,9 +671,35 @@ def main():
             ]
             data.append(frame_data)
 
+            # draw skeleton based on angle values
+            # iteration over different person detections
+            for coords in pose_preds:
+                # Draw each point on image
+                # for coord in coords:
+                #     x_coord, y_coord = int(coord[0]), int(coord[1])
+                #     cv2.circle(image_debug, (x_coord, y_coord), 4, (255, 0, 0), 2)
+                #     new_csv_row.extend([x_coord, y_coord])
+                
+                # store angle values over 30 frames
+                for angle in angles:
+                    # append angle value to buffer
+                    angles_buffer[angle['title']].append(angle['value'])
+                    # analyze angle variation on the last 30 frames
+
+                # draw skeleton
+                image_colors = draw_skeleton_ept(image_bgr, coords, cfg.DATASET.DATASET_TEST,angles,angles_buffer)
+
+            # write detections image
+            img_file = os.path.join(pose_dir, 'ept_pose_{:08d}.jpg'.format(count))
+            cv2.imwrite(img_file, image_colors)
+            outcap_ept.write(np.uint8(image_colors))
+            
+
+
             # if count == 90:
             #     break
-        
+            
+    print(angles_buffer)
     # create df with whole video info to pass to score.Exercises
     fieldnames = ['Second', 'Angle', 'kpt_0', 'kpt_1', 'kpt_2', 'kpt_3', 'kpt_4', 'kpt_5', 
                 'kpt_6', 'kpt_7', 'kpt_8', 'kpt_9', 'kpt_10', 'kpt_11', 'kpt_12', 'kpt_13', 
@@ -516,7 +707,7 @@ def main():
     df = pd.DataFrame(data, columns=fieldnames)
     df['Second'] = df['Second'].astype(float)
     # save df for further use
-    df.to_csv('output/dataframe.csv')
+    df.to_csv('output/{}_dataframe.csv'.format(tag))
     # evaluate exercise, get scores
     exercise_sc = score.Exercises(tag, df)
     print(df[['Second', 'Angle']].describe())
@@ -530,6 +721,7 @@ def main():
 
     then_full= time.time()
     print("Processing complete at average {:03.2f} fps".format(count/(then_full - now_full)))
+    print('Total processing time: {} secs'.format(then_full - now_full))
     # write csv
     csv_headers = ['frame']
     if cfg.DATASET.DATASET_TEST == 'coco':
@@ -549,7 +741,8 @@ def main():
 
     vidcap.release()
     outcap.release()
-    outcap_heatmap.release()
+    # outcap_heatmap.release()
+    outcap_ept.release()
 
     cv2.destroyAllWindows()
 
@@ -562,7 +755,7 @@ def main():
     # upload csv
     s3_client.upload_file(csv_output_filename, 'research-test-s3-bucket', csv_output_filename)
     # upload dataframe csv
-    csv_dataframe_filename = os.path.join(args.outputDir, 'dataframe.csv')
+    csv_dataframe_filename = os.path.join(args.outputDir, '{}_dataframe.csv'.format(tag))
     s3_client.upload_file(csv_dataframe_filename, 'research-test-s3-bucket', csv_dataframe_filename)
     # upload json
     json_filename = os.path.join(args.outputDir, 'json/'+tag+'.json')

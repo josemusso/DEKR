@@ -1000,6 +1000,41 @@ def bike_post(self):
     teta_ri = angle_measure(self,7,8,6)
 
     return [{'value':teta_rd,'title':'Rodilla Der'},{'value':teta_ri,'title':'Rodilla Izq'}]
+
+def ept_brazos_piernas(self):
+    """
+    Measures elbow, shoulder, hip and knee angles.
+    Used points: Elbow, hand, shoulder. Each side.
+    """
+    ## Left elbow
+    teta_le = angle_measure(self,4,5,3)
+    ## Right elbow
+    teta_re = angle_measure(self,10,9,11)
+    
+    ## Left shoulder
+    teta_ls = angle_measure(self,3,4,6)
+    ## Right shoulder
+    teta_rs = angle_measure(self,9,12,10)
+    
+    ## Left hip
+    teta_lh = angle_measure(self,6,3,7)
+    ## Right hip
+    teta_rh = angle_measure(self,12,13,9)
+
+    ## Left knee
+    teta_lk = angle_measure(self,7,6,8)
+    ## Right knee
+    teta_rk = angle_measure(self,13,12,14)
+
+    # added corresponding crowdpose segment to joint
+    return [{'value':teta_le,'title':'Left Elbow', 'segment':[2,4]},
+            {'value':teta_re,'title':'Right Elbow', 'segment':[3,5]},
+            {'value':teta_ls,'title':'Left Shoulder', 'segment':[0,2]},
+            {'value':teta_rs,'title':'Right Shoulder', 'segment':[1,3]},
+            {'value':teta_lh,'title':'Left Hip', 'segment':[6,8]},
+            {'value':teta_rh,'title':'Right Hip', 'segment':[7,9]},
+            {'value':teta_lk,'title':'Left Knee', 'segment':[8,10]},
+            {'value':teta_rk,'title':'Right Knee', 'segment':[9,11]}]
     
 
 class Exercises:
@@ -1067,7 +1102,9 @@ class Exercises:
 
 
                         'BF_LAT': bike_lateral,
-                        'BF_POS': bike_post
+                        'BF_POS': bike_post,
+
+                        'EPT'   : ept_brazos_piernas
                         }
 
     def __init__(self, tag, pose, side):
