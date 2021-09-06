@@ -14,6 +14,7 @@ import argparse
 
 import csv
 import os
+import re
 import shutil
 import time
 import sys
@@ -57,6 +58,7 @@ pd.options.mode.chained_assignment = None
 import json
 from collections import deque 
 from statistics import mean, stdev
+import matplotlib.pyplot as plt
 
 if torch.cuda.is_available():
     print('Using GPU: ' + torch.cuda.get_device_name(0))
@@ -147,7 +149,7 @@ def draw_skeleton(image, points, config_dataset):
 
     return image
 
-def draw_skeleton_ept(image, points, config_dataset, angles, angles_buffer):
+def draw_skeleton_ept(image, points, config_dataset, angles, angles_buffer, count_ext):
     skeleton_coco = [
                 # # [16, 14], [14, 12], [17, 15], [15, 13], [12, 13], [6, 12], [7, 13], [6, 7], [6, 8],
                 # # [7, 9], [8, 10], [9, 11], [2, 3], [1, 2], [1, 3], [2, 4], [3, 5], [4, 6], [5, 7]
@@ -171,25 +173,39 @@ def draw_skeleton_ept(image, points, config_dataset, angles, angles_buffer):
         skeleton = skeleton_crowdpose
         color = (0,255,0) # change to green
 
+    # draw skeleton to new image with skeleton+black background
+    height, width, channels = image.shape
+    # print(image.shape)
+    skeleton_only = np.zeros((height,width,3), np.float32)
+    # print(skeleton_only.shape)
     # draw all lines
     for i, joint in enumerate(skeleton):
+            # print(type(points))
             pt1, pt2 = points[joint]
-            image = cv2.line(
-                image, (int(pt1[0]), int(pt1[1])), (int(pt2[0]), int(pt2[1])),
-                color, 2)
+            image = cv2.line(image, (int(pt1[0]), int(pt1[1])), (int(pt2[0]), int(pt2[1])),
+                            color, 2)
+            # draw skeleton on dark image
+            skeleton_only = cv2.line(skeleton_only, (int(pt1[0]), int(pt1[1])), (int(pt2[0]), int(pt2[1])),
+                            color, 2)
 
     # draw skeleton lines based on corresponding angle variation
     for angle in angles:
-        if len(angles_buffer[angle['title']])<3:
+        # get only the last 15 values from buffer for visualization
+        angle_unwrapped = np.rad2deg(np.unwrap(np.deg2rad(angles_buffer[angle['title']])))
+        buffer = list(angle_unwrapped)[-15:]
+        if len(buffer)<3:
             continue # cannot get stdev with too few values
         pt1, pt2 = points[angle['segment']]
-        delta_angle = stdev(angles_buffer[angle['title']])
+        delta_angle = stdev(buffer)
         max_var = 5
         delta_angle_norm = (min(delta_angle, max_var))/max_var # define max stddev to be red segment
-        print(angle['title'] +' '+ str(delta_angle_norm))
+        # print(angle['title'] +' '+ str(delta_angle_norm))
         color = (0,int(255*(1-delta_angle_norm)),int(255*(delta_angle_norm))) #BGR
-        print(color)
+        # print(color)
         image = cv2.line(image, (int(pt1[0]), int(pt1[1])), (int(pt2[0]), int(pt2[1])),
+            color, 2)
+        # draw on the black image
+        skeleton_only = cv2.line(skeleton_only, (int(pt1[0]), int(pt1[1])), (int(pt2[0]), int(pt2[1])),
             color, 2)
 
     # draw joint circle radious proportional to angle described
@@ -205,10 +221,95 @@ def draw_skeleton_ept(image, points, config_dataset, angles, angles_buffer):
     for point in points:
         # same order as defined
         x_coord, y_coord = int(point[0]), int(point[1])
-        cv2.circle(image, (x_coord, y_coord), int(4+(((angle[count]/360)**2)*50)), (255, 0, 0), 5)
+        cv2.circle(image, (x_coord, y_coord), int(4+(((abs(angle[count])/360))*50)), (255, 0, 0), 3)
+        # draw joints on black image
+        cv2.circle(skeleton_only, (x_coord, y_coord), int(4+(((abs(angle[count])/360))*50)), (255, 0, 0), 3)
         count +=1
-    return image
 
+    # write black image + skeleton
+    # print(skeleton_only.shape)
+    # cv2.imshow('skeleton_only',skeleton_only)
+
+    return image, skeleton_only
+
+# function to blend two images at certain time and with certain transition
+# length, to create demo video.
+def blend_2_images_to_video(img1, img2, start_at, transition_length, count):
+    increment = 1/transition_length
+    rel_count = count-start_at
+    # before transition
+    if count < start_at:
+        alpha=0
+    # during transition
+    elif (count >= start_at) and (count<=start_at+transition_length):
+        alpha = rel_count*increment
+    # after completed transition
+    elif count>start_at+transition_length:
+        alpha=1
+    print(count)
+    print('alpha: ', str(alpha))
+    img_blend = cv2.addWeighted(img1,1-alpha, img2,alpha,0)
+    return img_blend
+
+def plot_angles(frame ,points, angles, angles_buffer, count):
+    # ONLY FOR EPT TAG
+    # draw skeleton lines based on corresponding angle variation
+    
+    my_dpi=200
+    fig= plt.figure(figsize=(3200/my_dpi, 2000/my_dpi))
+    n = 1
+    for angle in angles:
+    # angle = angles[0]
+        x = np.arange(len(angles_buffer[angle['title']]))
+        y = np.rad2deg(np.unwrap(np.deg2rad(angles_buffer[angle['title']])))
+        plt.subplot(len(angles),1,n)
+        plt.plot(x,y,'k-', lw=2, label=angle['title'])
+        # plt.ylim([0, 360])
+        plt.legend(loc='upper right', bbox_to_anchor=(0.1, 0.1))
+        # set margins only when phase detected, denoise
+        min_val = min(y)
+        max_val = max(y)
+        plt.ylim([min_val-30, max_val+30])
+        range = max(y) - min(y)        
+        # if range > 30:
+        #     plt.margins(y=0.25)
+        # else:
+        #     plt.ylim()
+        plt.axis('off')
+        plt.xticks([], [])
+        n+=1 
+    # convert plt object to numpy rgb matrix
+    fig.canvas.draw()
+    graph_image = np.fromstring(fig.canvas.tostring_rgb(), dtype='uint8')
+    graph_image = graph_image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    # cv2.imwrite('graph_image_{:08d}.jpg'.format(count),graph_image)
+    plt.close(fig)
+    return graph_image
+
+def joints_ghosting(image, coords_buffer, count, selected_joints):
+    # skip first 3 frames
+    if count in [1,2,3]:
+        return image
+    # for every frame stored in coords_buffer, draw a line
+    # print(coords_buffer)
+    # pick every frame in the deque
+    for i in range(len(coords_buffer)-1):
+        points = coords_buffer[-i-1][0]
+        prev_points = coords_buffer[-i-2][0]
+        # pick every joint in the frame coords
+        j = -1
+        for point, prev_point in zip(points, prev_points):
+            # draw lines only for selected joints
+            j+=1
+            if not j in selected_joints:
+                continue
+            # print(point)
+            # print(prev_point)
+            # same order as defined
+            prev_x_coord, prev_y_coord = int(prev_point[0]), int(prev_point[1])
+            x_coord, y_coord = int(point[0]), int(point[1])
+            image = cv2.line(image, (prev_x_coord, prev_y_coord), (x_coord, y_coord), (178,178,178), 4)
+    return image
 
 def get_pose_estimation_prediction(cfg, model, image, vis_thre, selected_keypoint, transforms):
     # size at scale 1.0
@@ -348,36 +449,42 @@ def main():
     side = True
 
     # adjust dimensions if rotation is needed
-    rotate = True
+    rotate = False
     if rotate:    
         frame_height = int(vidcap.get(cv2.CAP_PROP_FRAME_WIDTH))
         frame_width = int(vidcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     # define writers to save videos
-    video_dets_name = '{}/{}_pose.mp4'.format(args.outputDir, os.path.splitext(os.path.basename(args.videoFile))[0])
+    video_dets_name = '{}/{}_basico.mp4'.format(args.outputDir, os.path.splitext(os.path.basename(args.videoFile))[0])
     video_heatmaps_name = '{}/{}_pose_heatmap.mp4'.format(args.outputDir, os.path.splitext(os.path.basename(args.videoFile))[0])
-    video_ept_name = '{}/{}_pose_ept.mp4'.format(args.outputDir, os.path.splitext(os.path.basename(args.videoFile))[0])
+    video_ept_name = '{}/{}_medio.mp4'.format(args.outputDir, os.path.splitext(os.path.basename(args.videoFile))[0])
     outcap = cv2.VideoWriter(video_dets_name,
                              cv2.VideoWriter_fourcc(*'MP4V'), int(skip_frame_cnt), (frame_width, frame_height))
     # outcap_heatmap = cv2.VideoWriter(video_heatmaps_name,
     #                          cv2.VideoWriter_fourcc(*'MP4V'), int(skip_frame_cnt), (frame_width, frame_height))
     outcap_ept = cv2.VideoWriter(video_ept_name,
                              cv2.VideoWriter_fourcc(*'MP4V'), int(skip_frame_cnt), (frame_width, frame_height))
+    video_graph_name = '{}/{}_avanzado.mp4'.format(args.outputDir, os.path.splitext(os.path.basename(args.videoFile))[0])
+    outcap_graph = cv2.VideoWriter(video_graph_name,
+                             cv2.VideoWriter_fourcc(*'MP4V'), int(skip_frame_cnt), (frame_width+(2*frame_height), frame_height))
 
     count = 0
     now_full= time.time()
     data = []
     # deque: store angle values over frames
+    buffer_maxlen = 600
     angles_buffer={
-        'Left Elbow':deque([], maxlen=15),
-        'Right Elbow':deque([], maxlen=15),
-        'Left Shoulder':deque([], maxlen=15),
-        'Right Shoulder':deque([], maxlen=15),
-        'Left Hip':deque([], maxlen=15),
-        'Right Hip':deque([], maxlen=15),
-        'Left Knee':deque([], maxlen=15),
-        'Right Knee':deque([], maxlen=15)
+        'Left Elbow':deque([], maxlen=buffer_maxlen),
+        'Right Elbow':deque([], maxlen=buffer_maxlen),
+        'Left Shoulder':deque([], maxlen=buffer_maxlen),
+        'Right Shoulder':deque([], maxlen=buffer_maxlen),
+        'Left Hip':deque([], maxlen=buffer_maxlen),
+        'Right Hip':deque([], maxlen=buffer_maxlen),
+        'Left Knee':deque([], maxlen=buffer_maxlen),
+        'Right Knee':deque([], maxlen=buffer_maxlen)
     }
+    
+    coords_buffer = deque([],maxlen=30)
 
     while vidcap.isOpened():
         total_now = time.time()
@@ -414,6 +521,9 @@ def main():
                                                                     args.visthre, 
                                                                     selected_keypoint,
                                                                     transforms=pose_transform)
+        ## OPTIONAL: keep only the most confident detection
+        if pose_preds:
+            pose_preds = [pose_preds[0]]
         then = time.time()
 
         # save heatmap_slice as image over original image
@@ -442,6 +552,10 @@ def main():
             cv2.imwrite(os.path.join(pose_dir, 'heatmap_{:08d}.jpg'.format(count)), image_w_heatmap)
         
             print("Found person pose at {:03.2f} fps".format(1/(then - now)))
+
+            # stop processing if too slow (stuck)
+            if 1/(then - now) < 0.5:
+                break
 
             new_csv_row = []
             for coords in pose_preds:
@@ -686,20 +800,76 @@ def main():
                     angles_buffer[angle['title']].append(angle['value'])
                     # analyze angle variation on the last 30 frames
 
-                # draw skeleton
-                image_colors = draw_skeleton_ept(image_bgr, coords, cfg.DATASET.DATASET_TEST,angles,angles_buffer)
+                ## SKELETON ONLY IMAGE ##
+                image_colors, skeleton_only = draw_skeleton_ept(image_bgr, coords, cfg.DATASET.DATASET_TEST,angles,angles_buffer, count)
 
+            if not pose_preds:
+                continue
             # write detections image
             img_file = os.path.join(pose_dir, 'ept_pose_{:08d}.jpg'.format(count))
             cv2.imwrite(img_file, image_colors)
-            outcap_ept.write(np.uint8(image_colors))
+            # write skeleton img
+            skeleton_img_file = os.path.join(pose_dir, 'skeleton_{:08d}.jpg'.format(count))
+            cv2.imwrite(skeleton_img_file, skeleton_only)
+            
+            ## TRANSITION TO DARK IMAGE ##
+            # generate blend video w transition to only skeleton
+            start_transition_at = 2*30
+            transition_length = 2*30     # 90 frames = 3 sec
+            # img_blend = blend_2_images_to_video(image_colors.astype(np.float32),
+            #                                     skeleton_only,
+            #                                     start_transition_at,
+            #                                     transition_length,
+            #                                     count)
+            img_blend=image_colors.astype(np.float32)
+            # outcap_ept.write(np.uint8(img_blend))
+
+            ## GENERATE GRAPH ##
+            # generate image with angles overlay
+            graph_image = plot_angles(np.uint8(img_blend), coords, angles, angles_buffer, count)
+            # inverse to create white lines graph
+            graph_image = cv2.bitwise_not(graph_image)
+            # add graph to video
+            graph_image = cv2.resize(graph_image,(frame_height*2, frame_height))
+
+            # roi to insert graph
+            rows,cols,channels = graph_image.shape
+            # two options: paste image or vstack image
+            # img_blend[-rows:, 0:cols] = graph_image
             
 
+            ## JOINTS GHOSTING ##
+            # select joints to highlight:
+            selected_joints = [
+                                # 0,  # 'left_shoulder'
+                                # 1,  #  'right_shoulder',
+                                # 2,  #  'left_elbow',
+                                # 3,  #  'right_elbow',
+                                # 4,  #  'left_wrist',
+                                # 5,  #  'right_wrist',
+                                # 6,  #  'left_hip',
+                                # 7,  #  'right_hip',
+                                # 8,  #  'left_knee',
+                                # 9,  #  'right_knee',
+                                # 10, #  'left_ankle',
+                                # 11, #  'right_ankle',
+                                # 12, #  'head',
+                                # 13  #  'neck'
+                                ]
 
-            # if count == 90:
-            #     break
+            coords_buffer.append([coords])
+            ghosting_blend_image = joints_ghosting(img_blend, coords_buffer, count, selected_joints)
+            outcap_ept.write(np.uint8(ghosting_blend_image))
+
+            ## STACK IMAGE AND GRAPH ##
+            img_blend_and_graph = np.hstack((ghosting_blend_image, graph_image))
+            # print(img_blend_and_graph.shape)
+            outcap_graph.write(np.uint8(img_blend_and_graph))
+
+            if count == 15*25:
+                break
             
-    print(angles_buffer)
+    # print(angles_buffer)
     # create df with whole video info to pass to score.Exercises
     fieldnames = ['Second', 'Angle', 'kpt_0', 'kpt_1', 'kpt_2', 'kpt_3', 'kpt_4', 'kpt_5', 
                 'kpt_6', 'kpt_7', 'kpt_8', 'kpt_9', 'kpt_10', 'kpt_11', 'kpt_12', 'kpt_13', 
@@ -743,6 +913,7 @@ def main():
     outcap.release()
     # outcap_heatmap.release()
     outcap_ept.release()
+    outcap_graph.release()
 
     cv2.destroyAllWindows()
 
