@@ -2,10 +2,12 @@
 **/*.avi
 **/*.AVI
 **/*.mov
+**/*.MOV
 **/*.mp4
 **/*.png
 **/*.jpg
 *.jpg
+*.MOV
 
 # experiment folder
 data/
