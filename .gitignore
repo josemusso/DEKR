@@ -3,6 +3,8 @@
 **/*.AVI
 **/*.mov
 **/*.mp4
+**/*.png
+**/*.jpg
 
 # experiment folder
 data/
