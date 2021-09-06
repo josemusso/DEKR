@@ -5,6 +5,7 @@
 **/*.mp4
 **/*.png
 **/*.jpg
+*.jpg
 
 # experiment folder
 data/
